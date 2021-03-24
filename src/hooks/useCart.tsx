@@ -1,4 +1,4 @@
-import { createContext, ReactNode, useContext, useState } from 'react';
+import { createContext, ReactNode, useContext, useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import { api } from '../services/api';
 import { Product, Stock } from '../types';
@@ -22,40 +22,93 @@ interface CartContextData {
 const CartContext = createContext<CartContextData>({} as CartContextData);
 
 export function CartProvider({ children }: CartProviderProps): JSX.Element {
+
   const [cart, setCart] = useState<Product[]>(() => {
-    // const storagedCart = Buscar dados do localStorage
-
-    // if (storagedCart) {
-    //   return JSON.parse(storagedCart);
-    // }
-
+     const storagedCart = localStorage.getItem('@RocketShoes:cart');
+    if (storagedCart) {
+      return JSON.parse(storagedCart);
+    }
     return [];
   });
 
+  function settingCartAndSettingStorage(dataCart:Product[], textAlert:string){
+    setCart(dataCart);
+    window.localStorage.setItem('@RocketShoes:cart', JSON.stringify(dataCart))
+    if(textAlert !== "noneText"){
+      toast.success(textAlert);
+    }
+  }
+
   const addProduct = async (productId: number) => {
     try {
-      // TODO
+      const alredyProductInCart = cart.find((item)=> item.id === productId);
+      if(!alredyProductInCart){
+        //recebendo data mas passand para outro nome, como: product e stock
+        const {data: product} = await api.get<Product>(`products/${productId}`);
+        const {data: stock} = await api.get<Product>(`stock/${productId}`);
+        const {amount} = stock;
+        if(amount > 0){
+          settingCartAndSettingStorage([...cart, {...product, amount: 1}], "Produto adicionado com sucesso!");
+        }
+      }else{
+        const {data: stock} = await api.get<Product>(`stock/${productId}`);
+        const {amount} = stock;
+        if(amount > alredyProductInCart.amount){
+          const newCart = cart.map(item => {
+            return (item.id === productId) ? {...item, amount: Number(item.amount + 1)} : item;
+          });
+          settingCartAndSettingStorage(newCart, "Produto adicionado com sucesso!");
+        }else{
+          toast.error('Quantidade solicitada fora de estoque');
+        }
+      }
+
     } catch {
-      // TODO
+      toast.error('Erro na adição do produto');
     }
   };
 
   const removeProduct = (productId: number) => {
     try {
-      // TODO
+      const productExist = cart.some((item)=> item.id === productId)
+      console.log(productExist);
+      if(!productExist){
+        toast.error('Erro na remoção do produto');
+        return;
+      }
+      const productUpdated = cart.filter((item)=>{   return item.id !== productId; })
+      settingCartAndSettingStorage(productUpdated, "Produto removido com sucesso!");
     } catch {
-      // TODO
+      toast.error('Erro na remoção do produto');
     }
   };
 
-  const updateProductAmount = async ({
-    productId,
-    amount,
-  }: UpdateProductAmount) => {
+  const updateProductAmount = async ({productId,amount}: UpdateProductAmount) => {
     try {
-      // TODO
+      if(amount < 1){
+        toast.error("Erro na alteração de quantidade do produto");
+        return;
+      }
+      const {data} = await api.get(`/stock/${productId}`);
+      const stockAmount = (data.amount);            
+      
+      if(amount > stockAmount){
+        toast.error('Quantidade solicitada fora de estoque');
+        return;
+      };
+      
+      const isThereSomeProduct = cart.some((item)=> item.id === productId)
+      if(!isThereSomeProduct){
+        toast.error("Erro na alteração de quantidade do produto");
+        return;
+      }
+
+      const newProduct = cart.map((item)=>{
+        return (item.id === productId) ? {...item, amount:amount} : item;
+      });
+      settingCartAndSettingStorage(newProduct, "noneText");
     } catch {
-      // TODO
+      toast.error("Erro na alteração de quantidade do produto");
     }
   };
 
@@ -70,6 +123,5 @@ export function CartProvider({ children }: CartProviderProps): JSX.Element {
 
 export function useCart(): CartContextData {
   const context = useContext(CartContext);
-
   return context;
 }
